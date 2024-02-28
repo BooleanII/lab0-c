@@ -10,26 +10,71 @@
  *   cppcheck-suppress nullPointer
  */
 
+/* Create an empty node */
+element_t *e_new(char *s)
+{
+    element_t *node = malloc(sizeof(element_t));
+    if (node) {
+        node->value = (char *) malloc(sizeof(char) * (strlen(s) + 1));
+        strncpy(node->value, s, strlen(s) + 1);
+        INIT_LIST_HEAD(&node->list);
+        return node;
+    }
+    return NULL;
+}
 
 /* Create an empty queue */
 struct list_head *q_new()
 {
+    struct list_head *head = malloc(sizeof(struct list_head));
+    if (head) {
+        INIT_LIST_HEAD(head);
+        return head;
+    }
     return NULL;
 }
 
 /* Free all storage used by queue */
-void q_free(struct list_head *head) {}
+void q_free(struct list_head *head)
+{
+    if (!head)
+        return;
+
+    element_t *visit, *visit_next;
+    list_for_each_entry_safe (visit, visit_next, head, list) {
+        free(visit->value);
+        free(visit);
+    }
+
+    free(head);
+}
 
 /* Insert an element at head of queue */
 bool q_insert_head(struct list_head *head, char *s)
 {
-    return true;
+    if (!head)
+        return false;
+
+    element_t *node = e_new(s);
+    if (node) {
+        list_add(&node->list, head);
+        return true;
+    }
+    return false;
 }
 
 /* Insert an element at tail of queue */
 bool q_insert_tail(struct list_head *head, char *s)
 {
-    return true;
+    if (!head)
+        return false;
+
+    element_t *node = e_new(s);
+    if (node) {
+        list_add_tail(&node->list, head);
+        return true;
+    }
+    return false;
 }
 
 /* Remove an element from head of queue */
