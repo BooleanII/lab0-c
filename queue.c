@@ -133,6 +133,17 @@ int q_size(struct list_head *head)
 bool q_delete_mid(struct list_head *head)
 {
     // https://leetcode.com/problems/delete-the-middle-node-of-a-linked-list/
+    if (!head || list_empty(head))
+        return false;
+
+    struct list_head *forward = head->next, *backward = head->prev;
+    while (forward->next != backward && forward != backward) {
+        forward = forward->next;
+        backward = backward->prev;
+    }
+    element_t *element = list_entry(forward, element_t, list);
+    list_del(forward);
+    q_release_element(element);
     return true;
 }
 
@@ -147,15 +158,59 @@ bool q_delete_dup(struct list_head *head)
 void q_swap(struct list_head *head)
 {
     // https://leetcode.com/problems/swap-nodes-in-pairs/
+    if (!head || list_empty(head) || list_is_singular(head))
+        return;
+
+    struct list_head *first = head->next, *second = head->next->next;
+    while (first != head && second != head) {
+        list_move(first, second);
+
+        first = first->next;
+        second = first->next;
+    }
 }
 
 /* Reverse elements in queue */
-void q_reverse(struct list_head *head) {}
+void q_reverse(struct list_head *head)
+{
+    if (!head || list_empty(head) || list_is_singular(head))
+        return;
+
+    struct list_head *node, *safe, *tmp;
+    list_for_each_safe (node, safe, head) {
+        tmp = node->next;
+        node->next = node->prev;
+        node->prev = tmp;
+    }
+    tmp = head->next;
+    head->next = head->prev;
+    head->prev = tmp;
+}
 
 /* Reverse the nodes of the list k at a time */
 void q_reverseK(struct list_head *head, int k)
 {
     // https://leetcode.com/problems/reverse-nodes-in-k-group/
+    if (!head || list_empty(head) || list_is_singular(head) || k < 2)
+        return;
+
+    int i;
+    struct list_head *cut_point, group, tmp;
+    INIT_LIST_HEAD(&tmp);
+
+    do {
+        cut_point = head->next;
+        for (i = 1; i < k && cut_point != head; i++)
+            cut_point = cut_point->next;
+
+        list_cut_position(&group, head,
+                          (cut_point == head) ? cut_point->prev : cut_point);
+
+        if (cut_point != head)
+            q_reverse(&group);
+        list_splice_tail(&group, &tmp);
+    } while (!list_empty(head));
+    list_splice(&tmp, head);
 }
 
 /* Sort elements of queue in ascending/descending order */
