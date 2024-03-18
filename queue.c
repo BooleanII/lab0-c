@@ -213,8 +213,263 @@ void q_reverseK(struct list_head *head, int k)
     list_splice(&tmp, head);
 }
 
+/*
+** compare list_head struct content with descend option
+** @descend: 0-ascend, 1-descend
+*/
+int compare(const struct list_head *a, const struct list_head *b, bool descend)
+{
+    if (a == b)
+        return 0;
+
+    int res = strcmp(list_entry(a, element_t, list)->value,
+                     list_entry(b, element_t, list)->value);
+
+    if (descend)
+        return -res;
+
+    return res;
+}
+
+/*
+** Start of implementation of Timsort
+*/
+
+struct pair {
+    struct list_head *head, *next;
+};
+
+typedef int (*list_cmp_func_t)(const struct list_head *,
+                               const struct list_head *,
+                               bool);
+
+size_t run_size(struct list_head *head)
+{
+    if (!head)
+        return 0;
+    if (!head->next)
+        return 1;
+    return (size_t) (head->next->prev);
+}
+
+
+struct pair find_run(struct list_head *list, list_cmp_func_t cmp, bool descend)
+{
+    size_t len = 1;
+    struct list_head *next = list->next, *head = list;
+    struct pair result;
+
+    if (!next) {
+        result.head = head, result.next = next;
+        return result;
+    }
+
+    if (cmp(list, next, descend) > 0) {
+        /* decending run, also reverse the list */
+        struct list_head *prev = NULL;
+        do {
+            len++;
+            list->next = prev;
+            prev = list;
+            list = next;
+            next = list->next;
+            head = list;
+        } while (next && cmp(list, next, descend) > 0);
+        list->next = prev;
+    } else {
+        do {
+            len++;
+            list = next;
+            next = list->next;
+        } while (next && cmp(list, next, descend) <= 0);
+        list->next = NULL;
+    }
+    head->prev = NULL;
+    head->next->prev = (struct list_head *) len;
+    result.head = head, result.next = next;
+    return result;
+}
+
+void build_prev_link(struct list_head *head,
+                     struct list_head *tail,
+                     struct list_head *list)
+{
+    tail->next = list;
+    do {
+        list->prev = tail;
+        tail = list;
+        list = list->next;
+    } while (list);
+
+    /* The final links to make a circular doubly-linked list */
+    tail->next = head;
+    head->prev = tail;
+}
+
+struct list_head *merge(struct list_head *a,
+                        struct list_head *b,
+                        list_cmp_func_t cmp,
+                        bool descend)
+{
+    struct list_head *head = NULL;
+    struct list_head **tail = &head;
+
+    for (;;) {
+        /* if equal, take 'a' -- important for sort stability */
+        if (cmp(a, b, descend) <= 0) {
+            *tail = a;
+            tail = &(a->next);
+            a = a->next;
+            if (!a) {
+                *tail = b;
+                break;
+            }
+        } else {
+            *tail = b;
+            tail = &(b->next);
+            b = b->next;
+            if (!b) {
+                *tail = a;
+                break;
+            }
+        }
+    }
+    return head;
+}
+
+struct list_head *merge_at(int *stk_size,
+                           struct list_head *at,
+                           list_cmp_func_t cmp,
+                           bool descend)
+{
+    size_t len = run_size(at) + run_size(at->prev);
+    struct list_head *prev = at->prev->prev;
+    struct list_head *list = merge(at->prev, at, cmp, descend);
+    list->prev = prev;
+    list->next->prev = (struct list_head *) len;
+    --(*stk_size);
+    return list;
+}
+
+struct list_head *merge_force_collapse(int *stk_size,
+                                       struct list_head *stack,
+                                       list_cmp_func_t cmp,
+                                       bool descend)
+{
+    while (*stk_size >= 3) {
+        if (run_size(stack->prev->prev) < run_size(stack)) {
+            stack->prev = merge_at(stk_size, stack->prev, cmp, descend);
+        } else {
+            stack = merge_at(stk_size, stack, cmp, descend);
+        }
+    }
+    return stack;
+}
+
+struct list_head *merge_collapse(int *stk_size,
+                                 struct list_head *stack,
+                                 list_cmp_func_t cmp,
+                                 bool descend)
+{
+    int n;
+    while ((n = *stk_size) >= 2) {
+        if ((n >= 3 && run_size(stack->prev->prev) <=
+                           run_size(stack->prev) + run_size(stack)) ||
+            (n >= 4 &&
+             run_size(stack->prev->prev->prev) <=
+                 run_size(stack->prev->prev) + run_size(stack->prev))) {
+            if (run_size(stack->prev->prev) < run_size(stack)) {
+                stack->prev = merge_at(stk_size, stack->prev, cmp, descend);
+            } else {
+                stack = merge_at(stk_size, stack, cmp, descend);
+            }
+        } else if (run_size(stack->prev) <= run_size(stack)) {
+            stack = merge_at(stk_size, stack, cmp, descend);
+        } else {
+            break;
+        }
+    }
+
+    return stack;
+}
+
+void merge_final(struct list_head *head,
+                 struct list_head *a,
+                 struct list_head *b,
+                 list_cmp_func_t cmp,
+                 bool descend)
+{
+    struct list_head *tail = head;
+
+    for (;;) {
+        /* if equal, take 'a' -- important for sort stability */
+        if (cmp(a, b, descend) <= 0) {
+            tail->next = a;
+            a->prev = tail;
+            tail = a;
+            a = a->next;
+            if (!a)
+                break;
+        } else {
+            tail->next = b;
+            b->prev = tail;
+            tail = b;
+            b = b->next;
+            if (!b) {
+                b = a;
+                break;
+            }
+        }
+    }
+
+    /* Finish linking remainder of list b on to tail */
+    build_prev_link(head, tail, b);
+}
+
+void q_timsort(struct list_head *head, list_cmp_func_t cmp, bool descend)
+{
+    int stk_size = 0;
+
+    struct list_head *list = head->next, *stack = NULL;
+    if (head == head->prev)
+        return;
+
+    /* Convert to a null-terminated singly-linked list. */
+    head->prev->next = NULL;
+
+    do {
+        /* Find next run */
+        struct pair result = find_run(list, cmp, descend);
+        result.head->prev = stack;
+        stack = result.head;
+        list = result.next;
+        stk_size++;
+        stack = merge_collapse(&stk_size, stack, cmp, descend);
+    } while (list);
+
+    /* End of input; merge together all the runs. */
+    stack = merge_force_collapse(&stk_size, stack, cmp, descend);
+
+    /* The final merge; rebuild prev links */
+    struct list_head *stk0 = stack, *stk1 = stk0->prev;
+    while (stk1 && stk1->prev)
+        stk0 = stk0->prev, stk1 = stk1->prev;
+    if (stk_size <= 1) {
+        build_prev_link(head, head, stk0);
+        return;
+    }
+    merge_final(head, stk1, stk0, cmp, descend);
+}
+
+/*
+** End of implementation of Timsort
+*/
+
 /* Sort elements of queue in ascending/descending order */
-void q_sort(struct list_head *head, bool descend) {}
+void q_sort(struct list_head *head, bool descend)
+{
+    q_timsort(head, compare, descend);
+}
 
 /* Remove every node which has a node with a strictly less value anywhere to
  * the right side of it */
