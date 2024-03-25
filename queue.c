@@ -80,18 +80,21 @@ bool q_insert_tail(struct list_head *head, char *s)
 /* Remove an element from head of queue */
 element_t *q_remove_head(struct list_head *head, char *sp, size_t bufsize)
 {
-    if (!head || !sp || list_empty(head))
+    if (!head || list_empty(head))
         return NULL;
 
     struct list_head *node = head->next;
     element_t *element = list_entry(node, element_t, list);
-    size_t strsize = strlen(element->value) + 1;
-    if (strsize <= bufsize)
-        strncpy(sp, element->value, strsize + 1);
-    else {
-        strncpy(sp, element->value, bufsize - 1);
-        sp[bufsize] = '\0';
+    if (sp) {
+        size_t strsize = strlen(element->value) + 1;
+        if (strsize <= bufsize)
+            strncpy(sp, element->value, strsize + 1);
+        else {
+            strncpy(sp, element->value, bufsize - 1);
+            sp[bufsize] = '\0';
+        }
     }
+
     list_del(node);
     return element;
 }
@@ -99,18 +102,21 @@ element_t *q_remove_head(struct list_head *head, char *sp, size_t bufsize)
 /* Remove an element from tail of queue */
 element_t *q_remove_tail(struct list_head *head, char *sp, size_t bufsize)
 {
-    if (!head || !sp || list_empty(head))
+    if (!head || list_empty(head))
         return NULL;
 
     struct list_head *node = head->prev;
     element_t *element = list_entry(node, element_t, list);
-    size_t strsize = strlen(element->value) + 1;
-    if (strsize <= bufsize)
-        strncpy(sp, element->value, strsize);
-    else {
-        strncpy(sp, element->value, bufsize - 1);
-        sp[bufsize] = '\0';
+    if (sp) {
+        size_t strsize = strlen(element->value) + 1;
+        if (strsize <= bufsize)
+            strncpy(sp, element->value, strsize);
+        else {
+            strncpy(sp, element->value, bufsize - 1);
+            sp[bufsize] = '\0';
+        }
     }
+
     list_del(node);
     return element;
 }
@@ -151,6 +157,43 @@ bool q_delete_mid(struct list_head *head)
 bool q_delete_dup(struct list_head *head)
 {
     // https://leetcode.com/problems/remove-duplicates-from-sorted-list-ii/
+    if (!head || list_empty(head))
+        return false;
+
+    if (list_is_singular(head))
+        return true;
+
+    struct list_head *visit, *visit_next, *head_delete = q_new();
+    struct list_head *dup_beg = head->next, *dup_end = head->next;
+
+    if (!head_delete)
+        return false;
+
+    list_for_each_safe (visit, visit_next, head) {
+        if (visit_next == head ||
+            strcmp(list_entry(visit, element_t, list)->value,
+                   list_entry(visit_next, element_t, list)->value)) {
+            if (dup_beg != dup_end) {
+                dup_beg->prev->next = dup_end->next;
+                dup_end->next->prev = dup_beg->prev;
+                head_delete->next = dup_beg;
+                head_delete->prev = dup_end;
+                dup_beg->prev = head_delete;
+                dup_end->next = head_delete;
+
+                element_t *entry, *entry_next;
+                list_for_each_entry_safe (entry, entry_next, head_delete,
+                                          list) {
+                    free(entry->value);
+                    free(entry);
+                }
+            }
+            dup_beg = visit_next;
+        }
+        dup_end = visit_next;
+    }
+
+    free(head_delete);
     return true;
 }
 
@@ -526,5 +569,39 @@ int q_descend(struct list_head *head)
 int q_merge(struct list_head *head, bool descend)
 {
     // https://leetcode.com/problems/merge-k-sorted-lists/
-    return 0;
+    if (!head || list_empty(head))
+        return 0;
+
+    int cnt = 0;
+
+    struct list_head sorted, *node;
+    INIT_LIST_HEAD(&sorted);
+
+    while (1) {
+        struct list_head *ins_node = NULL, *cmp_node = NULL;
+
+        list_for_each (node, head) {
+            if (list_empty(list_entry(node, queue_contex_t, chain)->q))
+                continue;
+
+            cmp_node = list_entry(node, queue_contex_t, chain)->q->next;
+            if (!ins_node) {
+                ins_node = cmp_node;
+            } else if (compare(ins_node, cmp_node, descend) >= 0) {
+                ins_node = cmp_node;
+            }
+        }
+
+        if (!ins_node)
+            break;
+
+        list_del(ins_node);
+        list_add_tail(ins_node, &sorted);
+
+        cnt++;
+    }
+
+    list_splice(&sorted, list_entry(head->next, queue_contex_t, chain)->q);
+
+    return cnt;
 }
